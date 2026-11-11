@@ -1,0 +1,89 @@
+# Documentación de libra-mcp
+
+## 1. Introducción
+
+`libra-mcp` es el entorno en Docker que permite a Claude Code trabajar contra bases de
+datos Oracle de LIBRA a través de la VPN FortiGate, usando el servidor MCP de SQLcl.
+Todo el manejo del día a día se hace desde el menú `./libra_mcp.sh` (instalación, arranque
+y parada de la VPN, y gestión de las conexiones Oracle). La explicación completa del
+entorno está en el `README.md` y en el `CLAUDE.md`.
+
+Este documento recoge la parametrización disponible y ejemplos de uso, y se irá ampliando
+con cada mejora.
+
+### Recomendador de pasos pendientes
+
+Cada vez que arranca el menú, el script mira el estado del entorno y muestra en la
+cabecera **la lista de pasos que todavía faltan**, en el orden en que conviene hacerlos y
+con la opción de menú que resuelve cada uno. Así no hace falta recordar la secuencia de
+instalación: el propio menú te guía.
+
+Qué comprueba, en orden:
+
+1. **Docker Desktop arrancado.** Si no lo está, es lo único que recomienda (sin Docker no
+   se puede comprobar el resto).
+2. **Credenciales de la VPN** configuradas → opción 2.
+3. **Imágenes** construidas → opción 3.
+4. **Certificado** del FortiGate guardado → opción 4.
+5. **Servidor MCP** registrado en Claude Code → opción 5 (si falta Claude Code, lo avisa ahí).
+6. **VPN en marcha:** cuando todo lo anterior está pero el túnel está parado → opción 7.
+
+Cuando no queda nada pendiente, muestra `✔ Todo listo. Abre Claude Code.`
+
+A propósito **no** comprueba si hay conexiones Oracle guardadas: esa comprobación obliga a
+lanzar un contenedor Docker, y hacerlo cada vez que se repinta el menú lo ralentizaría.
+
+## 2. Parametrización
+
+Las constantes del principio de `libra_mcp.sh` permiten ajustar el entorno sin tocar la
+lógica:
+
+| Constante | Valor por defecto | Para qué sirve |
+|---|---|---|
+| `CONTENEDOR_VPN` | `vpn_libra` | Nombre del contenedor del túnel VPN. |
+| `IMAGEN_VPN` | `libra-vpn` | Nombre de la imagen de la VPN. |
+| `IMAGEN_SQLCL` | `libra-sqlcl-mcp` | Nombre de la imagen del servidor MCP de SQLcl. |
+| `VOLUMEN_CONEXIONES` | `sqlcl_conexiones` | Volumen donde SQLcl guarda las conexiones cifradas. |
+| `NOMBRE_MCP` | `sqlcl` | Nombre con el que se registra el servidor MCP en Claude Code. |
+| `SEGUNDOS_ESPERA_TUNEL` | `30` | Tiempo máximo esperando a que suba el túnel al arrancar la VPN. |
+| `SEGUNDOS_ESPERA_CERTIFICADO` | `20` | Tiempo máximo esperando a leer la huella del certificado del FortiGate. |
+
+El recomendador de pasos no tiene parámetros propios: reutiliza las comprobaciones que ya
+usa el resto del menú.
+
+## 3. Ejemplos de uso
+
+Arrancar el menú:
+
+```bash
+./libra_mcp.sh
+```
+
+Ejemplo de cabecera recién instalado el entorno (nada hecho todavía):
+
+```
+libra-mcp · VPN: inactiva
+
+ Pasos pendientes:
+   • Configurar credenciales de la VPN  → opción 2
+   • Construir imágenes  → opción 3
+   • Obtener certificado del FortiGate  → opción 4
+   • Registrar servidor MCP en Claude Code  → opción 5
+```
+
+Ejemplo cuando todo está instalado pero la VPN está parada:
+
+```
+libra-mcp · VPN: inactiva
+
+ Pasos pendientes:
+   • Arrancar la VPN  → opción 7
+```
+
+Ejemplo cuando el entorno está listo para usar:
+
+```
+libra-mcp · VPN: activa
+
+ ✔ Todo listo. Abre Claude Code.
+```

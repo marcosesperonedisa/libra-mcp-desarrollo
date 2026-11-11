@@ -513,10 +513,57 @@ mostrar_resumen_vpn() {
   fi
 }
 
+# Mira el estado del entorno y recomienda, en orden, lo que todavía falta por hacer.
+# Reutiliza las comprobaciones rápidas; no consulta las conexiones Oracle para no
+# lanzar un contenedor Docker cada vez que se repinta el menú.
+mostrar_pasos_pendientes() {
+  # Sin Docker no se puede comprobar casi nada: es siempre el primer paso.
+  if ! docker_disponible; then
+    printf '\n Pasos pendientes:\n'
+    printf '   \033[33m•\033[0m Arranca Docker Desktop (y vuelve a abrir el menú)\n'
+    return
+  fi
+
+  # Vamos acumulando lo pendiente en el mismo orden que se instala
+  local pendientes=()
+  if ! vpn_configurada; then
+    pendientes+=("Configurar credenciales de la VPN  → opción 2")
+  fi
+  if ! imagen_existe "$IMAGEN_VPN" || ! imagen_existe "$IMAGEN_SQLCL"; then
+    pendientes+=("Construir imágenes  → opción 3")
+  fi
+  if ! certificado_guardado; then
+    pendientes+=("Obtener certificado del FortiGate  → opción 4")
+  fi
+  if ! claude_disponible; then
+    pendientes+=("Instalar Claude Code y registrar el MCP  → opción 5")
+  elif ! mcp_registrado; then
+    pendientes+=("Registrar servidor MCP en Claude Code  → opción 5")
+  fi
+  # Arrancar la VPN solo tiene sentido cuando la instalación base ya está lista
+  if vpn_configurada && certificado_guardado \
+     && imagen_existe "$IMAGEN_VPN" && imagen_existe "$IMAGEN_SQLCL" \
+     && ! tunel_activo; then
+    pendientes+=("Arrancar la VPN  → opción 7")
+  fi
+
+  if [ "${#pendientes[@]}" -eq 0 ]; then
+    printf '\n \033[32m✔ Todo listo. Abre Claude Code.\033[0m\n'
+    return
+  fi
+
+  printf '\n Pasos pendientes:\n'
+  local paso
+  for paso in "${pendientes[@]}"; do
+    printf '   \033[33m•\033[0m %s\n' "$paso"
+  done
+}
+
 mostrar_menu_principal() {
   clear
   printf '\033[1mlibra-mcp\033[0m · '
   mostrar_resumen_vpn
+  mostrar_pasos_pendientes
   cat << 'MENU'
 
  Instalación
