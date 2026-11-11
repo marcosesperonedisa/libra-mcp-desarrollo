@@ -36,6 +36,14 @@ se detecta la IP, se omite esa parte.
 A propósito **no** comprueba si hay conexiones Oracle guardadas: esa comprobación obliga a
 lanzar un contenedor Docker, y hacerlo cada vez que se repinta el menú lo ralentizaría.
 
+### Conexión como SYSDBA
+
+Al añadir una conexión Oracle (opción 11 → Añadir), el menú pregunta
+**"¿Conectar como SYSDBA?"**. Si respondes que sí, la conexión se guarda con el rol
+SYSDBA (se añade `as sysdba` a la cadena de conexión), de modo que el MCP la use siempre
+con ese rol. Para cambiar el rol de una conexión ya existente —o quitárselo— basta con
+volver a añadirla con el mismo nombre, que la sobrescribe.
+
 ## 2. Parametrización
 
 Las constantes del principio de `libra_mcp.sh` permiten ajustar el entorno sin tocar la

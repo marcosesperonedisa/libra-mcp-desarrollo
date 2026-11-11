@@ -108,6 +108,7 @@ SQL> exit
 ```
 
 - SQLcl pide la contraseña por teclado sin mostrarla y la guarda cifrada en el volumen `sqlcl_conexiones`, nunca en la imagen.
+- Para que la conexión entre con rol **SYSDBA**, añade `as sysdba` al final: `conn -save <nombre> -savepwd usuario@IP_SERVIDOR:1521/servicio as sysdba`. Desde el menú (opción 11), responde *sí* a *¿Conectar como SYSDBA?*.
 - Usa la IP del servidor en lugar del nombre, al menos al principio: el DNS que envía la VPN puede no llegar al contenedor de SQLcl.
 - Usa nombres de conexión que indiquen entorno y esquema (`desa_libra_fin`, `desa_libra_cli`…).
 - Guarda solo conexiones de desarrollo o pruebas, nunca de producción.

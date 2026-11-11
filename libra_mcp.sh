@@ -427,7 +427,7 @@ pedir_clave_oracle() {
 }
 
 anadir_conexion() {
-  local nombre usuario host puerto servicio clave
+  local nombre usuario host puerto servicio clave sysdba="" aviso_rol=""
   mostrar_titulo "Añadir conexión"
   exigir_tunel && exigir_imagen "$IMAGEN_SQLCL" || return
   nombre=$(pedir_valor_validado "Nombre de la conexión (ej. desa_libra_fin)" "$PATRON_NOMBRE")
@@ -435,12 +435,17 @@ anadir_conexion() {
   host=$(pedir_valor_validado "Host o IP del servidor" "$PATRON_HOST")
   puerto=$(pedir_valor_validado "Puerto" "$PATRON_PUERTO" "1521")
   servicio=$(pedir_valor_validado "Service name" "$PATRON_NOMBRE")
-  printf '\nSe guardará: %s → %s@%s:%s/%s\n' "$nombre" "$usuario" "$host" "$puerto" "$servicio" >&2
+  # Rol opcional: si se conecta como SYSDBA, se añade "as sysdba" a la cadena de conexión
+  if confirmar "¿Conectar como SYSDBA?"; then
+    sysdba=" as sysdba"
+    aviso_rol=" (AS SYSDBA)"
+  fi
+  printf '\nSe guardará: %s → %s@%s:%s/%s%s\n' "$nombre" "$usuario" "$host" "$puerto" "$servicio" "$aviso_rol" >&2
   confirmar "¿Continuar?" || return
   clave=$(pedir_clave_oracle)
   # La contraseña viaja solo por la tubería: no queda en argumentos, disco ni historial
-  printf 'conn -save %s -savepwd %s/"%s"@%s:%s/%s\nexit\n' \
-    "$nombre" "$usuario" "$clave" "$host" "$puerto" "$servicio" | ejecutar_sqlcl_por_tunel
+  printf 'conn -save %s -savepwd %s/"%s"@%s:%s/%s%s\nexit\n' \
+    "$nombre" "$usuario" "$clave" "$host" "$puerto" "$servicio" "$sysdba" | ejecutar_sqlcl_por_tunel
   clave=""
 }
 

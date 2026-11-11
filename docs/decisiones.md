@@ -127,3 +127,65 @@ _R1: (A) **Estado + IP del túnel**._
 
 - Confirmar en uso real el formato que devuelve `ip -4 addr show ppp0` (la IP sale con su
   máscara, p. ej. `10.20.30.40/32`); si se prefiere sin máscara, ajustar el `awk`.
+
+## 2026-11-11 — Poder guardar una conexión que conecte como SYSDBA
+
+### 1. La petición tal como se ha entendido
+
+**Pendiente de confirmación del usuario.**
+
+En "Añadir conexión", tras pedir los datos y antes de guardar, se pregunta
+**"¿Conectar como SYSDBA? [s/N]"**. Si se responde que sí, la conexión se guarda añadiendo
+`as sysdba` al `conn -save`, de modo que quede almacenada con ese rol y el MCP la use como
+SYSDBA. El resumen previo a guardar refleja el rol. Para cambiar una conexión existente (o
+quitarle el rol), se vuelve a añadir con el mismo nombre (sobrescribe). Solo SYSDBA; no se
+añade un selector de roles general.
+
+### 2. Preguntas y respuestas
+
+**P1 — ¿Cómo quieres indicar el rol?**
+- (A) Un sí/no "¿Conectar como SYSDBA?" al añadir la conexión (cubre el caso típico).
+- (B) Un campo de rol más general (normal / SYSDBA / SYSOPER).
+
+_R1: (A) **Sí/no SYSDBA** al añadir la conexión._
+
+### 3. Fuentes analizadas
+
+- `libra_mcp.sh` (commit d6e183b): `anadir_conexion`, `probar_conexion`,
+  `ejecutar_sqlcl_por_tunel`, patrón de guardado `conn -save ... -savepwd`.
+- SQLcl (imagen `libra-sqlcl-mcp`, `help connect`): `CONN <logon> AS {SYSASM | SYSBACKUP |
+  SYSDBA | SYSDG | SYSOPER | SYSRAC | SYSKM}`. El rol se indica con `AS SYSDBA` al final.
+- Comprobado que `conn -save` **solo persiste la conexión si conecta con éxito**: sin BD no
+  crea nada en el almacén. Por tanto, que SQLcl guarde el rol y que el MCP reconecte por
+  `-name` como SYSDBA **no se ha podido verificar aquí**; queda como punto a comprobar
+  contra una BD de desarrollo real.
+
+### 4. Decisiones
+
+- Se añade la pregunta **"¿Conectar como SYSDBA?"** en `anadir_conexion`, con el helper
+  `confirmar` (por defecto, no), justo antes del resumen.
+- Si se acepta, se añade `" as sysdba"` a la cadena del `conn -save` y el resumen lo
+  refleja con `" (AS SYSDBA)"`.
+- `probar_conexion` **no** se toca: usa `conn -name`, así que reconecta con el rol si SQLcl
+  lo ha persistido.
+- Para cambiar el rol de una conexión existente se vuelve a añadir con el mismo nombre
+  (sobrescribe); no se añade un flujo de edición aparte.
+- Se mantiene el patrón de contraseña por tubería (no queda en argumentos, disco ni
+  historial).
+
+### 5. Alternativas descartadas
+
+- **Selector de roles general** (SYSOPER, SYSASM…): descartado; se queda en sí/no SYSDBA,
+  que es el caso real.
+- **Flujo de edición de conexiones existentes**: innecesario, re-añadir con el mismo nombre
+  ya sobrescribe.
+- **Que `probar_conexion` informe de si la sesión es SYSDBA**: se ofreció, pero de momento
+  no se añade para no cambiar la prueba de todas las conexiones. Queda como posible mejora.
+
+### 6. Pendiente de comprobar
+
+- Contra una BD de desarrollo real: que `conn -save ... as sysdba` **persista el rol**, que
+  `conn -name` reconecte como SYSDBA y, sobre todo, que **el MCP** lo haga. Verificar, ya
+  conectado por nombre, con `SELECT sys_context('USERENV','ISDBA') FROM dual;` (debe dar
+  `TRUE`).
+- Que el usuario indicado tenga de verdad privilegio SYSDBA en esa base de datos.
