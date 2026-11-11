@@ -1,0 +1,25 @@
+services:
+  # Túnel VPN FortiGate (SSL). Se levanta una vez y queda en segundo plano.
+  vpn:
+    build: ./vpn
+    image: libra-vpn
+    container_name: vpn_libra
+    cap_add:
+      - NET_ADMIN
+    # Permite crear y usar el dispositivo PPP (major 108) sin modo privilegiado
+    device_cgroup_rules:
+      - 'c 108:* rwm'
+    volumes:
+      - ./secretos/vpn.conf:/etc/openfortivpn/config:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ip", "link", "show", "ppp0"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Servidor MCP de SQLcl. No se arranca aquí: lo lanza Claude Code en cada sesión.
+  sqlcl:
+    build: ./sqlcl
+    image: libra-sqlcl-mcp
+    profiles: ["mcp"]

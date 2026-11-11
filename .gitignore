@@ -1,0 +1,5 @@
+# Credenciales de la VPN: nunca al repositorio
+secretos/
+
+# Basura de macOS
+.DS_Store

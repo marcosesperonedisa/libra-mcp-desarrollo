@@ -1,0 +1,12 @@
+# Configuración de openfortivpn
+# Copiar a secretos/vpn.conf y proteger con: chmod 600 secretos/vpn.conf
+host = vpn.ejemplo.com
+port = 443
+username = tu_usuario
+password = tu_clave
+
+# Huella SHA256 del certificado del FortiGate (se obtiene en el primer arranque)
+# trusted-cert = 0000000000000000000000000000000000000000000000000000000000000000
+
+# Reintenta la conexión cada 10 segundos si el túnel se cae
+persistent = 10
