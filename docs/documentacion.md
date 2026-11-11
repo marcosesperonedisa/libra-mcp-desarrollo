@@ -44,6 +44,26 @@ SYSDBA (se añade `as sysdba` a la cadena de conexión), de modo que el MCP la u
 con ese rol. Para cambiar el rol de una conexión ya existente —o quitárselo— basta con
 volver a añadirla con el mismo nombre, que la sobrescribe.
 
+### Desinstalar el entorno
+
+En "Mantenimiento" → **13) Desinstalar** se elimina el entorno de forma guiada. Primero
+avisa de todo lo que va a tocar y pide una confirmación general; después va paso a paso:
+
+1. Para y borra el **contenedor de la VPN** (`vpn_libra`) y la red del proyecto.
+2. Borra las **imágenes** `libra-vpn` y `libra-sqlcl-mcp` (solo las que existan).
+3. **(confirmación aparte)** Borra el **volumen de conexiones** `sqlcl_conexiones`,
+   avisando de que se pierden las conexiones Oracle guardadas.
+4. **(confirmación aparte)** Desregistra el **servidor MCP** de Claude Code.
+5. **(confirmación aparte)** Borra los **secretos de la VPN** (`secretos/vpn.conf`).
+
+Los pasos 1 y 2 van bajo la confirmación general, porque son reconstruibles (basta volver
+a instalar). Los pasos 3, 4 y 5 piden confirmación propia (por defecto, *no*), porque
+suponen pérdida de datos o de configuración del usuario. Cada paso es independiente: si la
+pieza no existe, lo indica y continúa. Al final muestra un resumen de lo hecho.
+
+Si el volumen no se deja borrar por estar "en uso", cierra Claude Code (que mantiene viva
+la sesión del MCP) y repite la desinstalación.
+
 ## 2. Parametrización
 
 Las constantes del principio de `libra_mcp.sh` permiten ajustar el entorno sin tocar la

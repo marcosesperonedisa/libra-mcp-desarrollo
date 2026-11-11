@@ -93,6 +93,7 @@ docker_disponible()    { docker_instalado && docker info >/dev/null 2>&1; }
 compose_disponible()   { docker compose version >/dev/null 2>&1; }
 claude_disponible()    { command -v claude >/dev/null 2>&1; }
 imagen_existe()        { docker image inspect "$1" >/dev/null 2>&1; }
+volumen_existe()       { docker volume inspect "$1" >/dev/null 2>&1; }
 vpn_configurada()      { [ -f "$FICHERO_VPN" ]; }
 certificado_guardado() { grep -qE '^[[:space:]]*trusted-cert[[:space:]]*=' "$FICHERO_VPN" 2>/dev/null; }
 tunel_activo()         { docker exec "$CONTENEDOR_VPN" ip link show ppp0 >/dev/null 2>&1; }
@@ -376,6 +377,92 @@ actualizar_sqlcl() {
   docker compose --profile mcp build --no-cache sqlcl && mostrar_ok "SQLcl actualizado. Reinicia Claude Code para usar la nueva versión."
 }
 
+# Elimina el entorno de forma guiada: contenedor, imágenes y, previa confirmación,
+# también el volumen de conexiones, el registro del MCP y los secretos de la VPN.
+desinstalar() {
+  mostrar_titulo "Desinstalar entorno"
+  exigir_docker || return
+
+  # Enseñamos qué se va a tocar antes de pedir el visto bueno general
+  mostrar_aviso "Esto va a eliminar el entorno libra-mcp:"
+  printf '   - Contenedor de la VPN (%s) y su red\n' "$CONTENEDOR_VPN" >&2
+  printf '   - Imágenes Docker (%s, %s)\n' "$IMAGEN_VPN" "$IMAGEN_SQLCL" >&2
+  printf '   - Volumen de conexiones (%s)  → se pregunta aparte\n' "$VOLUMEN_CONEXIONES" >&2
+  printf '   - Registro del MCP en Claude Code  → se pregunta aparte\n' >&2
+  printf '   - Secretos de la VPN  → se pregunta aparte\n' >&2
+  confirmar "¿Desinstalar el entorno?" || return
+
+  # Paso 1: parar y borrar el contenedor de la VPN y la red del proyecto.
+  # 'docker compose down' no falla aunque no haya nada levantado; el 'rm -f'
+  # remata por si compose no estuviera disponible o quedara algo colgado.
+  printf '\n' >&2
+  docker compose down >/dev/null 2>&1
+  docker rm -f "$CONTENEDOR_VPN" "$CONTENEDOR_CERTIFICADO" >/dev/null 2>&1
+  mostrar_ok "Contenedor de la VPN y red eliminados."
+
+  # Paso 2: borrar las imágenes, solo las que existan
+  local imagen
+  for imagen in "$IMAGEN_VPN" "$IMAGEN_SQLCL"; do
+    if imagen_existe "$imagen"; then
+      if docker rmi "$imagen" >/dev/null 2>&1; then
+        mostrar_ok "Imagen $imagen eliminada."
+      else
+        mostrar_error "No se pudo eliminar la imagen $imagen."
+      fi
+    else
+      mostrar_aviso "La imagen $imagen no existía."
+    fi
+  done
+
+  # Paso 3 (destructivo): el volumen guarda las conexiones Oracle cifradas
+  if volumen_existe "$VOLUMEN_CONEXIONES"; then
+    mostrar_aviso "El volumen $VOLUMEN_CONEXIONES contiene las conexiones Oracle guardadas."
+    if confirmar "¿Borrar el volumen y perder las conexiones guardadas?"; then
+      if docker volume rm "$VOLUMEN_CONEXIONES" >/dev/null 2>&1; then
+        mostrar_ok "Volumen de conexiones eliminado."
+      else
+        mostrar_error "No se pudo eliminar el volumen (¿lo usa algún contenedor?)."
+      fi
+    else
+      mostrar_aviso "Se conserva el volumen de conexiones."
+    fi
+  else
+    mostrar_aviso "No había volumen de conexiones."
+  fi
+
+  # Paso 4: quitar el registro del MCP en Claude Code
+  if mcp_registrado; then
+    if confirmar "¿Desregistrar el servidor MCP '$NOMBRE_MCP' de Claude Code?"; then
+      if claude mcp remove "$NOMBRE_MCP" -s user >/dev/null 2>&1; then
+        mostrar_ok "Servidor MCP desregistrado."
+      else
+        mostrar_error "No se pudo desregistrar el MCP."
+      fi
+    else
+      mostrar_aviso "Se conserva el registro del MCP."
+    fi
+  else
+    mostrar_aviso "El MCP no estaba registrado."
+  fi
+
+  # Paso 5 (destructivo): secretos de la VPN (credenciales + huella del certificado)
+  if [ -f "$FICHERO_VPN" ] || [ -f "$FICHERO_VPN_TEMPORAL" ]; then
+    if confirmar "¿Borrar los secretos de la VPN (secretos/vpn.conf)?"; then
+      if rm -f "$FICHERO_VPN" "$FICHERO_VPN_TEMPORAL"; then
+        mostrar_ok "Secretos de la VPN eliminados."
+      else
+        mostrar_error "No se pudieron eliminar los secretos."
+      fi
+    else
+      mostrar_aviso "Se conservan los secretos de la VPN."
+    fi
+  else
+    mostrar_aviso "No había secretos de la VPN."
+  fi
+
+  mostrar_ok "Desinstalación terminada."
+}
+
 # ===================== Claude Code =====================
 
 registrar_mcp() {
@@ -600,6 +687,7 @@ mostrar_menu_principal() {
 
  Mantenimiento
   12) Actualizar SQLcl
+  13) Desinstalar
 
    0) Salir
 
@@ -655,6 +743,7 @@ menu_principal() {
       10) ver_log_vpn; pausar ;;
       11) menu_conexiones ;;
       12) actualizar_sqlcl; pausar ;;
+      13) desinstalar; pausar ;;
       0)  exit 0 ;;
       *)  mostrar_error "Opción no válida."; sleep 1 ;;
     esac

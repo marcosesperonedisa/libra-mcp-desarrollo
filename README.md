@@ -56,7 +56,7 @@ Después, arranca la VPN (opción 7) y añade tus conexiones Oracle (opción 11)
 - Probar ejecuta una consulta contra `dual` a través del túnel.
 - Eliminar busca la conexión en el almacén de SQLcl, muestra qué se va a borrar y pide confirmación. Si el nombre coincide con más de una entrada, no borra nada.
 
-**Mantenimiento:** actualizar SQLcl a la última versión.
+**Mantenimiento:** actualizar SQLcl a la última versión y **desinstalar** el entorno (elimina el contenedor y las imágenes y, con confirmación propia en cada caso, el volumen de conexiones, el registro del MCP y los secretos de la VPN).
 
 ## Instalación manual (referencia)
 
