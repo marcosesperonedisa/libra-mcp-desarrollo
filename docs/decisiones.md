@@ -89,3 +89,41 @@ _R3: (B) **Instalación + VPN**, con comprobaciones rápidas. No comprueba conex
   el menú molestamente lento. Si lo fueran, aplicar el cacheo descartado en el punto 5.
 - Que los estados detectados coincidan con la realidad en cada fase de la instalación.
   Enlaza con los cinco "Puntos pendientes de verificar" del `CLAUDE.md`.
+
+## 2026-11-11 — Mostrar el estado de la VPN en vez de "Todo listo"
+
+### 1. La petición tal como se ha entendido
+
+Cuando no queda ningún paso pendiente, en lugar de "✔ Todo listo" mostrar datos de que la
+VPN está en marcha. Alcance confirmado con el usuario: **estado + IP del túnel**.
+
+### 2. Preguntas y respuestas
+
+**P1 — ¿Qué datos de la VPN mostrar?**
+- (A) Estado + IP del túnel.
+- (B) Estado + IP + interfaz (ppp0).
+- (C) Solo el estado.
+
+_R1: (A) **Estado + IP del túnel**._
+
+### 3. Fuentes analizadas
+
+- `libra_mcp.sh` (sobre el commit 79cd006): `mostrar_pasos_pendientes`, `mostrar_ip_tunel`.
+
+### 4. Decisiones
+
+- La rama "sin pendientes" solo se alcanza con el túnel activo, así que ahí la VPN siempre
+  está en marcha: se muestra `✔ VPN en marcha` y, si se detecta, `· IP del túnel: X`.
+- Se extrae el helper `obtener_ip_tunel()` para no duplicar el comando `docker/awk` entre
+  `mostrar_ip_tunel` y la nueva línea.
+- Si no se detecta IP, se omite esa parte y la VPN se sigue marcando en marcha.
+
+### 5. Alternativas descartadas
+
+- **Añadir la interfaz (ppp0)**: no aporta frente a la IP.
+- **Mostrar solo el estado**: la cabecera ya muestra `VPN: activa`, sería redundante.
+
+### 6. Pendiente de comprobar
+
+- Confirmar en uso real el formato que devuelve `ip -4 addr show ppp0` (la IP sale con su
+  máscara, p. ej. `10.20.30.40/32`); si se prefiere sin máscara, ajustar el `awk`.

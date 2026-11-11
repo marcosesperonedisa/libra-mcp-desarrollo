@@ -28,7 +28,10 @@ Qué comprueba, en orden:
 5. **Servidor MCP** registrado en Claude Code → opción 5 (si falta Claude Code, lo avisa ahí).
 6. **VPN en marcha:** cuando todo lo anterior está pero el túnel está parado → opción 7.
 
-Cuando no queda nada pendiente, muestra `✔ Todo listo. Abre Claude Code.`
+Cuando no queda nada pendiente (y por tanto el túnel está activo), en vez de un mensaje
+genérico muestra que la **VPN está en marcha** y la **IP del túnel**, por ejemplo
+`✔ VPN en marcha · IP del túnel: 10.20.30.40/32. Abre Claude Code.` Si por lo que sea no
+se detecta la IP, se omite esa parte.
 
 A propósito **no** comprueba si hay conexiones Oracle guardadas: esa comprobación obliga a
 lanzar un contenedor Docker, y hacerlo cada vez que se repinta el menú lo ralentizaría.
@@ -80,10 +83,10 @@ libra-mcp · VPN: inactiva
    • Arrancar la VPN  → opción 7
 ```
 
-Ejemplo cuando el entorno está listo para usar:
+Ejemplo cuando el entorno está listo para usar (la VPN en marcha, con su IP):
 
 ```
 libra-mcp · VPN: activa
 
- ✔ Todo listo. Abre Claude Code.
+ ✔ VPN en marcha · IP del túnel: 10.20.30.40/32. Abre Claude Code.
 ```

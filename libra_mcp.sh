@@ -150,9 +150,14 @@ comprobar_requisitos() {
   fi
 }
 
+# Devuelve la IP del túnel VPN, o cadena vacía si el túnel no está activo
+obtener_ip_tunel() {
+  docker exec "$CONTENEDOR_VPN" ip -4 addr show ppp0 2>/dev/null | awk '/inet /{print $2}'
+}
+
 mostrar_ip_tunel() {
   local ip_tunel
-  ip_tunel=$(docker exec "$CONTENEDOR_VPN" ip -4 addr show ppp0 2>/dev/null | awk '/inet /{print $2}')
+  ip_tunel=$(obtener_ip_tunel)
   [ -n "$ip_tunel" ] && printf '  IP del túnel: %s\n' "$ip_tunel" >&2
 }
 
@@ -547,8 +552,13 @@ mostrar_pasos_pendientes() {
     pendientes+=("Arrancar la VPN  → opción 7")
   fi
 
+  # Instalación completa y túnel activo: mostramos que la VPN está en marcha y su IP
   if [ "${#pendientes[@]}" -eq 0 ]; then
-    printf '\n \033[32m✔ Todo listo. Abre Claude Code.\033[0m\n'
+    local ip_tunel
+    ip_tunel=$(obtener_ip_tunel)
+    printf '\n \033[32m✔ VPN en marcha\033[0m'
+    [ -n "$ip_tunel" ] && printf ' · IP del túnel: %s' "$ip_tunel"
+    printf '. Abre Claude Code.\n'
     return
   fi
 
