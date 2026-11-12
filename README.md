@@ -50,11 +50,12 @@ Después, arranca la VPN (opción 7) y añade tus conexiones Oracle (opción 11)
 
 **Uso diario:** ver estado, arrancar, parar o reiniciar la VPN y ver su log.
 
-**Conexiones Oracle:** listar, añadir, probar y eliminar.
+**Conexiones Oracle:** listar, añadir, probar, eliminar e importar desde JSON (Base64).
 
 - Al añadir, la contraseña se pide sin mostrarla y llega a SQLcl solo por una tubería: no queda en argumentos, ficheros ni historial.
 - Probar ejecuta una consulta contra `dual` a través del túnel.
 - Eliminar busca la conexión en el almacén de SQLcl, muestra qué se va a borrar y pide confirmación. Si el nombre coincide con más de una entrada, no borra nada.
+- Importar desde JSON (Base64) da de alta varias conexiones de una vez a partir de una cadena Base64 (un JSON `{ "nombre": { host, port, service, usuario, password } }`). La cadena se pega oculta, se valida cada conexión, se muestra un resumen sin contraseñas y se guardan todas tras una única confirmación. Es el puente hasta que exista la importación por websocket. Requiere `jq`.
 
 **Mantenimiento:** actualizar SQLcl a la última versión y **desinstalar** el entorno (elimina el contenedor y las imágenes y, con confirmación propia en cada caso, el volumen de conexiones, el registro del MCP y los secretos de la VPN).
 

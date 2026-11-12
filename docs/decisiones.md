@@ -484,3 +484,79 @@ hacer alguna llamada), para no dejar ruido en sesiones que solo se presentan.
 - En real: que el `awk` de la copia no afecta al rendimiento del MCP con uso intenso.
 - Que las líneas `tools/call` reales caben en una sola línea (JSON compacto); si alguna
   viniera multilínea, habría que revisar el filtrado por línea.
+
+## 2026-11-12 — Importar conexiones desde un JSON en Base64
+
+### 1. La petición tal como se ha entendido
+
+Mientras no exista el websocket que importará las conexiones, añadir una opción **puente**
+en el submenú **Gestionar conexiones** (11) que permita **importar una o varias conexiones
+Oracle a partir de una cadena Base64**. La cadena, al decodificarse, contiene un JSON con
+este formato (objeto cuyas claves son los nombres de conexión):
+
+```json
+{ "nombre": { "host": "10.10.10.1", "port": 1521, "service": "DESA", "usuario": "LIBRA_RO", "password": "xxYYzz112233" } }
+```
+
+Por cada entrada del JSON se guarda una conexión en el almacén de SQLcl, igual que hace hoy
+"Añadir" (`conn -save <nombre> -savepwd <usuario>/<clave>@<host>:<puerto>/<servicio>`), pero
+tomando los datos del JSON en lugar de pedirlos por teclado.
+
+*(Confirmada por el usuario.)*
+
+### 2. Preguntas y respuestas
+
+1. **¿Cómo se introduce la cadena Base64?** → *Pegar oculto*: se pega en el prompt sin que
+   se vea en pantalla (como una contraseña), para no dejar las credenciales en el scrollback
+   del terminal.
+2. **¿Cómo confirmar antes de guardar (una o varias conexiones)?** → *Resumen y confirmar*:
+   se muestra la lista de conexiones encontradas (nombre, usuario, host, puerto, servicio;
+   nunca la contraseña), se pide una única confirmación y se importan todas. Los nombres que
+   ya existan se sobreescriben, igual que al añadir con el mismo nombre.
+3. **¿Qué analizador de JSON usar?** → *jq* (ya está en el Mac, `/usr/bin/jq`). La opción
+   comprueba que esté presente y, si faltara, avisa de instalarlo (`brew install jq`).
+
+### 3. Fuentes analizadas
+
+- `libra_mcp.sh` (versión actual en `main`): funciones `anadir_conexion`,
+  `pedir_clave_oracle`, `ejecutar_sqlcl_por_tunel`, `listar_conexiones`, patrones
+  `PATRON_*` y submenú `menu_conexiones`.
+- `docs/documentacion.md` y `README.md` (secciones de conexiones).
+- Entorno local: `jq` 1.7.1-apple, `python3` (pyenv) y `base64` disponibles; el Base64 de
+  ejemplo decodifica a JSON válido.
+
+### 4. Decisiones
+
+- **Ubicación:** nueva entrada en `menu_conexiones` (submenú 11), p. ej. "5) Importar desde
+  JSON (Base64)". No toca el menú principal.
+  *Por qué:* es gestión de conexiones y así queda junto a Añadir/Probar/Eliminar; además es
+  el sitio donde vivirá luego la importación por websocket.
+- **Entrada oculta:** la cadena se lee con `read -s` (como una contraseña).
+  *Por qué:* el Base64 lleva contraseñas en claro; así no quedan a la vista ni en el
+  scrollback.
+- **Parseo con jq, por tubería:** `base64 -d` → `jq`, sin escribir la cadena ni el JSON en
+  disco ni en argumentos. La contraseña vive solo en variables de shell que se limpian tras
+  guardar, mismo patrón que `anadir_conexion`.
+  *Por qué:* consistente con la norma del proyecto (contraseñas solo por tubería) y con el
+  código existente.
+- **Resumen + confirmación única** antes de guardar; nunca se muestra la contraseña.
+- **Sobreescritura:** los nombres ya existentes se sobreescriben (comportamiento natural de
+  `conn -save`). En el resumen se marca cuáles ya existían.
+- **Validación:** cada campo se valida con los `PATRON_*` existentes. Si una conexión trae
+  un campo inválido, se omite con aviso y se continúa con las demás (import parcial).
+- **Sin rol SYSDBA:** el JSON no trae rol; las conexiones se guardan como normales.
+- **Requisitos:** exige túnel activo e imagen de SQLcl (como `anadir_conexion`), porque
+  `conn -save -savepwd` valida la conexión contra la base de datos al guardarla.
+
+### 5. Alternativas descartadas
+
+- **Pegar visible / leer de fichero:** descartado por seguridad (el Base64 lleva
+  credenciales): visible queda en el scrollback, el fichero queda en disco.
+- **Confirmar una a una / sin confirmar:** descartado; se prefiere un único resumen.
+- **Parsear sin jq (python3 o dentro del contenedor):** descartado por complejidad; jq ya
+  está y encaja con el estilo del menú.
+
+### 6. Pendiente de comprobar
+
+- Que `read -s` acepta pegar una cadena Base64 larga (de una sola línea) sin recortarla.
+- Comportamiento con un JSON que traiga campos extra o un rol: se ignoran.

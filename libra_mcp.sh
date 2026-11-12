@@ -96,6 +96,7 @@ docker_instalado()     { command -v docker >/dev/null 2>&1; }
 docker_disponible()    { docker_instalado && docker info >/dev/null 2>&1; }
 compose_disponible()   { docker compose version >/dev/null 2>&1; }
 claude_disponible()    { command -v claude >/dev/null 2>&1; }
+jq_disponible()        { command -v jq >/dev/null 2>&1; }
 imagen_existe()        { docker image inspect "$1" >/dev/null 2>&1; }
 volumen_existe()       { docker volume inspect "$1" >/dev/null 2>&1; }
 vpn_configurada()      { [ -f "$FICHERO_VPN" ]; }
@@ -125,6 +126,13 @@ exigir_imagen() {
 exigir_vpn_configurada() {
   if ! vpn_configurada; then
     mostrar_error "No existe secretos/vpn.conf. Configura antes las credenciales de la VPN."
+    return 1
+  fi
+}
+
+exigir_jq() {
+  if ! jq_disponible; then
+    mostrar_error "Hace falta jq para leer el JSON. Instálalo con: brew install jq"
     return 1
   fi
 }
@@ -591,6 +599,104 @@ anadir_conexion() {
   clave=""
 }
 
+# Importa una o varias conexiones a partir de una cadena Base64 que, al decodificarse,
+# contiene un JSON: { "nombre": { host, port, service, usuario, password }, ... }.
+# Es un puente hasta que exista el websocket de importación. La cadena lleva contraseñas
+# en claro, así que se lee oculta y nunca se escribe en disco ni en argumentos: se decodifica
+# y se parsea por tubería, y las claves solo viven en variables que se limpian al terminar.
+importar_conexiones_json() {
+  local b64 json nombres nombre host puerto servicio usuario clave
+  local motivo marca existentes resumen="" script="" validas=0 omitidas=0
+  mostrar_titulo "Importar conexiones desde JSON (Base64)"
+  exigir_tunel && exigir_imagen "$IMAGEN_SQLCL" && exigir_jq || return
+
+  # La cadena se lee oculta (como una contraseña) para no dejar credenciales a la vista
+  read -r -s -p "Pega el Base64 con las conexiones y pulsa Enter: " b64; printf '\n' >&2
+  if [ -z "$b64" ]; then
+    mostrar_error "No se ha introducido ninguna cadena."
+    return
+  fi
+
+  # Decodificar y validar que es un objeto JSON; todo por tubería, sin tocar disco
+  json=$(printf '%s' "$b64" | base64 -d 2>/dev/null)
+  b64=""
+  if [ -z "$json" ] || ! printf '%s' "$json" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    mostrar_error "El Base64 no contiene un JSON de conexiones válido."
+    json=""
+    return
+  fi
+
+  # Lista de conexiones ya guardadas, para avisar de cuáles se van a sobreescribir
+  # (comprobación aproximada: solo informa, el guardado sobreescribe igualmente)
+  existentes=$(printf 'connmgr list\nexit\n' | ejecutar_sqlcl_sin_red 2>/dev/null)
+
+  # Recorremos cada conexión del JSON, validando los campos antes de aceptarla
+  nombres=$(printf '%s' "$json" | jq -r 'keys_unsorted[]')
+  while IFS= read -r nombre; do
+    [ -n "$nombre" ] || continue
+    # Cada campo se extrae por separado para que un valor vacío (p. ej. sin port) no
+    # desplace a los demás y para que ningún separador choque con la contraseña
+    host=$(printf '%s' "$json"     | jq -r --arg n "$nombre" '.[$n].host    // ""')
+    puerto=$(printf '%s' "$json"   | jq -r --arg n "$nombre" '.[$n].port    // "" | tostring')
+    servicio=$(printf '%s' "$json" | jq -r --arg n "$nombre" '.[$n].service // ""')
+    usuario=$(printf '%s' "$json"  | jq -r --arg n "$nombre" '.[$n].usuario // ""')
+    clave=$(printf '%s' "$json"    | jq -r --arg n "$nombre" '.[$n].password // ""')
+    # Puerto por defecto, igual que al añadir a mano
+    [ -z "$puerto" ] && puerto="1521"
+
+    # Validamos cada campo con los mismos patrones que usa "Añadir"
+    motivo=""
+    if ! printf '%s' "$nombre" | grep -qE "$PATRON_NOMBRE"; then
+      motivo="nombre no válido"
+    elif ! printf '%s' "$usuario" | grep -qE "$PATRON_USUARIO_ORACLE"; then
+      motivo="usuario no válido"
+    elif ! printf '%s' "$host" | grep -qE "$PATRON_HOST"; then
+      motivo="host no válido"
+    elif ! printf '%s' "$puerto" | grep -qE "$PATRON_PUERTO"; then
+      motivo="puerto no válido"
+    elif ! printf '%s' "$servicio" | grep -qE "$PATRON_NOMBRE"; then
+      motivo="service no válido"
+    elif [ -z "$clave" ]; then
+      motivo="sin contraseña"
+    elif printf '%s' "$clave" | grep -q '"'; then
+      motivo="la contraseña lleva comillas dobles"
+    fi
+    if [ -n "$motivo" ]; then
+      mostrar_aviso "Se omite '$nombre': $motivo."
+      omitidas=$((omitidas + 1))
+      continue
+    fi
+
+    # Marca informativa si el nombre ya estaba guardado
+    marca=""
+    printf '%s' "$existentes" | grep -qiF -- "$nombre" && marca="  (ya existe, se sobreescribe)"
+    resumen="${resumen}  • ${nombre} → ${usuario}@${host}:${puerto}/${servicio}${marca}"$'\n'
+    # La contraseña viaja solo por la tubería, entre comillas, como en "Añadir"
+    script="${script}conn -save ${nombre} -savepwd ${usuario}/\"${clave}\"@${host}:${puerto}/${servicio}"$'\n'
+    validas=$((validas + 1))
+  done <<< "$nombres"
+  clave=""; json=""
+
+  if [ "$validas" -eq 0 ]; then
+    mostrar_error "No hay ninguna conexión válida que importar."
+    script=""
+    return
+  fi
+
+  printf '\nSe importarán %s conexión(es):\n' "$validas" >&2
+  printf '%s' "$resumen" >&2
+  [ "$omitidas" -gt 0 ] && mostrar_aviso "$omitidas conexión(es) omitida(s) por datos no válidos."
+  if ! confirmar "¿Importar estas conexiones? Los nombres existentes se sobreescriben."; then
+    script=""
+    return
+  fi
+
+  # Todas las conexiones se guardan en una sola invocación del contenedor, por el túnel
+  printf '%sexit\n' "$script" | ejecutar_sqlcl_por_tunel
+  script=""
+  mostrar_ok "Importación terminada. Revisa la salida por si alguna conexión dio error."
+}
+
 probar_conexion() {
   local nombre salida
   mostrar_titulo "Probar conexión"
@@ -762,6 +868,7 @@ Conexiones Oracle
    2) Añadir
    3) Probar
    4) Eliminar
+   5) Importar desde JSON (Base64)
 
    0) Volver
 
@@ -778,6 +885,7 @@ menu_conexiones() {
       2) anadir_conexion; pausar ;;
       3) probar_conexion; pausar ;;
       4) eliminar_conexion; pausar ;;
+      5) importar_conexiones_json; pausar ;;
       0) return ;;
       *) mostrar_error "Opción no válida."; sleep 1 ;;
     esac

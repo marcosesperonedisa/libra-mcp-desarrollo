@@ -44,6 +44,49 @@ SYSDBA (se añade `as sysdba` a la cadena de conexión), de modo que el MCP la u
 con ese rol. Para cambiar el rol de una conexión ya existente —o quitárselo— basta con
 volver a añadirla con el mismo nombre, que la sobrescribe.
 
+### Importar conexiones desde JSON (Base64)
+
+En "Gestionar conexiones" → **5) Importar desde JSON (Base64)** se pueden dar de alta
+varias conexiones de golpe a partir de una cadena de texto. Es una opción **puente** hasta
+que exista el websocket que traerá las conexiones; de momento, alguien que ya tiene los
+datos genera la cadena y tú la pegas aquí.
+
+La cadena es un JSON codificado en Base64. El JSON es un objeto donde cada clave es el
+nombre de la conexión:
+
+```json
+{
+  "desa_libra_fin": { "host": "10.10.10.1", "port": 1521, "service": "DESA", "usuario": "LIBRA_RO", "password": "xxYYzz112233" },
+  "desa_libra_cli": { "host": "10.10.10.2", "port": 1521, "service": "DESA", "usuario": "LIBRA_RW", "password": "aabbcc445566" }
+}
+```
+
+Cómo funciona:
+
+1. La opción pide la cadena Base64 y la lee **oculta** (como una contraseña), porque dentro
+   lleva las contraseñas en claro. Así no quedan a la vista ni en el historial del terminal.
+2. La decodifica y la interpreta con `jq`. Si no es un Base64 válido o no es un objeto JSON,
+   avisa y no hace nada.
+3. Valida cada conexión con los mismos patrones que "Añadir" (nombre, usuario, host, puerto
+   y service). Si a `port` no le das valor, usa 1521. Si una conexión trae algún dato no
+   válido —o la contraseña lleva comillas dobles— **se omite esa y se siguen las demás**.
+4. Muestra un **resumen** (nombre, usuario, host, puerto y service; **nunca** la contraseña),
+   marcando las que ya existían, y pide **una sola confirmación**.
+5. Guarda todas con `conn -save -savepwd` a través del túnel, en una sola pasada. Los nombres
+   que ya existían **se sobreescriben**, igual que al añadir con el mismo nombre.
+
+Detalles importantes:
+
+- Las conexiones se guardan como **normales** (sin rol SYSDBA): el JSON no trae rol.
+- La contraseña viaja solo por tubería: la cadena Base64 y el JSON **no se escriben en disco
+  ni en argumentos**, y las variables con credenciales se limpian al terminar.
+- Hace falta `jq` en el Mac (en las versiones recientes de macOS ya viene). Si falta, la
+  opción avisa de instalarlo con `brew install jq`.
+- Como "Añadir", necesita el **túnel activo** y la **imagen de SQLcl**, porque `conn -save`
+  valida la conexión contra la base de datos al guardarla.
+- Limitación: una contraseña con comillas dobles (también lo impide "Añadir") o con
+  tabuladores/saltos de línea queda fuera de alcance.
+
 ### Desinstalar el entorno
 
 En "Mantenimiento" → **13) Desinstalar** se elimina el entorno de forma guiada. Primero
