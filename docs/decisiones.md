@@ -560,3 +560,75 @@ tomando los datos del JSON en lugar de pedirlos por teclado.
 
 - Que `read -s` acepta pegar una cadena Base64 larga (de una sola línea) sin recortarla.
 - Comportamiento con un JSON que traiga campos extra o un rol: se ignoran.
+
+## 2026-11-12 — Acceso a ficheros desde el MCP (carpeta compartida para compilar)
+
+### 1. La petición tal como se ha entendido
+
+Al usar el MCP desde otro chat, SQLcl no ve los ficheros del Mac (`/tmp`, los `.sql`…):
+el contenedor del MCP está aislado y solo monta el volumen de conexiones, así que `@fichero`
+falla y la única vía es enviar el fuente como texto por `sql_run` (partiendo spec y body).
+
+Se quiere que SQLcl **pueda acceder a ficheros del Mac** para compilar packages (y leer/
+escribir ficheros) de forma más cómoda. La solución es **montar una carpeta compartida**
+del proyecto dentro del contenedor del MCP; entonces se compila con `@/intercambio/fichero.sql`.
+
+*(Confirmada por el usuario.)*
+
+### 2. Preguntas y respuestas
+
+1. **¿Cómo debe ser el montaje?** → *Lectura y escritura*: SQLcl lee los `.sql` que se dejen
+   (compilar con `@`) y además puede escribir ahí (spool, exports, metadata) para recoger
+   las salidas. Lo que escriba el contenedor queda como root en el disco.
+2. **¿Dónde va la carpeta compartida?** → *En el proyecto*: carpeta `intercambio/` dentro del
+   repo (excluida de git), montada en `/intercambio`. Cómoda porque Claude Code trabaja en el
+   proyecto y usa rutas relativas.
+
+### 3. Fuentes analizadas
+
+- `libra_mcp.sh` (versión actual en `main`): `registrar_mcp` (el `claude mcp add ... docker
+  run ... -v "$VOLUMEN_CONEXIONES:$RUTA_CONEXIONES" ...`), bloque de constantes y helpers
+  `ejecutar_sqlcl_sin_red` / `ejecutar_sqlcl_por_tunel`.
+- Problema reportado por el usuario desde otro chat (SQLcl aislado, `@file` y `/tmp` no
+  accesibles).
+
+### 4. Decisiones
+
+- **Carpeta compartida `intercambio/`** en la raíz del proyecto, excluida de git, montada en
+  el contenedor del MCP como `/intercambio` en **lectura/escritura**.
+  *Por qué rw:* además de compilar (leer), permite que SQLcl escriba salidas (spool, exports)
+  que luego se recogen desde el Mac.
+- **Solo se toca `registrar_mcp`**: se añade `-v "$DIRECTORIO_INTERCAMBIO:$RUTA_INTERCAMBIO"`
+  al `docker run` del MCP. Los helpers del menú (`ejecutar_sqlcl_*`) no compilan, así que no
+  se tocan.
+- **Se monta solo la subcarpeta, nunca el proyecto entero.**
+  *Por qué:* el proyecto contiene `secretos/vpn.conf`; montar todo lo expondría al contenedor.
+- **Constantes nuevas** `DIRECTORIO_INTERCAMBIO` (= `$DIRECTORIO_PROYECTO/intercambio`) y
+  `RUTA_INTERCAMBIO` (= `/intercambio`). La carpeta se crea con `mkdir -p` al registrar, para
+  que exista antes de montarla (si no, Docker la crearía como root).
+- **Codificación:** los `.sql` que se dejen en `intercambio/` para compilar son **ficheros
+  efímeros** y se escriben en UTF-8 para que SQLcl los lea bien con `@`. El fuente oficial
+  conserva su codificación en el Control de Fuentes de EDISA. La regla "nuevo .sql =
+  Windows-1252" aplica a los fuentes, no a estas copias de compilación transitorias.
+- **Tras el cambio** hay que re-registrar el MCP (opción 5) y reiniciar Claude Code para que
+  el contenedor arranque con el nuevo montaje.
+
+### 5. Alternativas descartadas
+
+- **Montar el proyecto entero** en el contenedor: descartado por exponer `secretos/`.
+- **Montaje solo lectura:** descartado; se prefiere rw para recoger salidas de SQLcl.
+- **Carpeta fuera del proyecto** (`~/.libra-mcp/…`): descartado por comodidad; Claude Code
+  trabaja en el proyecto con rutas relativas.
+- **Seguir solo con el texto por `sql_run`:** es justo el problema que se quiere resolver.
+
+### 6. Pendiente de comprobar
+
+- Que el MCP de SQLcl ejecuta `@/intercambio/fichero.sql` (lee un script completo) y no solo
+  sentencias sueltas. Si no lo hiciera, el montaje sigue valiendo para que SQLcl lea/escriba
+  ficheros de datos y salidas.
+- Con qué codificación lee SQLcl el fichero con `@` (si basta UTF-8 o hay que fijar
+  `set encoding`), sobre todo con comentarios acentuados.
+- Comprobado (12-11-2026): el montaje funciona (el contenedor lee un `.sql` dejado en
+  `intercambio/` y escribe en la carpeta). En macOS Docker Desktop los ficheros que escribe
+  el contenedor aparecen a nombre del usuario del Mac, no de root, así que se leen y borran
+  sin problema.

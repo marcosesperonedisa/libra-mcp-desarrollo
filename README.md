@@ -119,13 +119,15 @@ SQL> exit
 ### 6. Registrar el servidor MCP en Claude Code
 
 ```
-claude mcp add -s user sqlcl -- "$PWD/lanzar_mcp.sh" docker run -i --rm --network container:vpn_libra -v sqlcl_conexiones:/root/.dbtools libra-sqlcl-mcp -mcp
+claude mcp add -s user sqlcl -- "$PWD/lanzar_mcp.sh" docker run -i --rm --network container:vpn_libra -v sqlcl_conexiones:/root/.dbtools -v "$PWD/intercambio:/intercambio" libra-sqlcl-mcp -mcp
 claude mcp list
 ```
 
 Usa `-i` sin `-t`: el servidor MCP se comunica por la entrada y salida estándar, y una terminal (TTY) corrompería los mensajes.
 
 El MCP se registra a través del wrapper `lanzar_mcp.sh` (usa su ruta absoluta). Ese wrapper permite activar un **log de peticiones** del MCP desde el menú (opción 14); si no quieres esa función, puedes registrar el `docker run ...` directamente sin el wrapper.
+
+El `-v "$PWD/intercambio:/intercambio"` monta una **carpeta compartida**: el contenedor del MCP está aislado y no ve el disco del Mac, así que todo lo que dejes en `intercambio/` lo ve SQLcl en `/intercambio`. Sirve para compilar un package (`@/intercambio/fichero.sql`) o intercambiar ficheros. Está fuera de git. Más detalle en `docs/documentacion.md`.
 
 Para probarlo, abre Claude Code y pide: "lista las conexiones disponibles".
 

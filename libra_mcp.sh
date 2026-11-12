@@ -20,6 +20,10 @@ readonly DIRECTORIO_LOGS="$DIRECTORIO_PROYECTO/logs"
 readonly FICHERO_LOG_MCP="$DIRECTORIO_LOGS/mcp-peticiones.log"
 readonly FICHERO_INTERRUPTOR_LOG="$DIRECTORIO_LOGS/mcp.on"
 readonly RUTA_WRAPPER_MCP="$DIRECTORIO_PROYECTO/lanzar_mcp.sh"
+# Carpeta compartida con el contenedor del MCP: lo que dejes aquí lo ve SQLcl en /intercambio
+# (p. ej. para compilar un package con @/intercambio/fichero.sql).
+readonly DIRECTORIO_INTERCAMBIO="$DIRECTORIO_PROYECTO/intercambio"
+readonly RUTA_INTERCAMBIO="/intercambio"
 readonly SEGUNDOS_ESPERA_TUNEL=30
 readonly SEGUNDOS_ESPERA_CERTIFICADO=20
 
@@ -536,11 +540,15 @@ registrar_mcp() {
     confirmar "Ya existe un servidor MCP llamado '$NOMBRE_MCP'. ¿Reemplazarlo?" || return
     claude mcp remove "$NOMBRE_MCP" -s user
   fi
+  # La carpeta de intercambio debe existir antes de montarla; si no, Docker la crearía como root
+  mkdir -p "$DIRECTORIO_INTERCAMBIO"
   # Registramos el MCP a través del wrapper 'lanzar_mcp.sh', que puede registrar las
-  # peticiones en un log si el modo está activo (opción 14). El comando docker es el mismo.
+  # peticiones en un log si el modo está activo (opción 14). Se monta además la carpeta de
+  # intercambio en /intercambio, para que SQLcl pueda leer/escribir ficheros del Mac.
   claude mcp add -s user "$NOMBRE_MCP" -- "$RUTA_WRAPPER_MCP" docker run -i --rm \
     --network "container:$CONTENEDOR_VPN" \
     -v "$VOLUMEN_CONEXIONES:$RUTA_CONEXIONES" \
+    -v "$DIRECTORIO_INTERCAMBIO:$RUTA_INTERCAMBIO" \
     "$IMAGEN_SQLCL" -mcp \
     && mostrar_ok "Servidor MCP registrado. Abre Claude Code y pide: lista las conexiones disponibles."
 }

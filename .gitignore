@@ -6,3 +6,6 @@ secretos/
 
 # Logs locales del MCP
 logs/
+
+# Carpeta compartida con el contenedor del MCP (fuentes de clientes, salidas): nunca al repo
+intercambio/

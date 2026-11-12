@@ -135,6 +135,39 @@ Detalles importantes:
   `tools/call`. La salida (respuestas) pasa intacta, así no se altera el protocolo MCP.
   Cada sesión escribe una cabecera con fecha solo si llega a hacer alguna llamada.
 
+### Carpeta de intercambio (compilar packages y ficheros)
+
+El contenedor del MCP está **aislado**: tiene su propio sistema de ficheros y no ve el disco
+del Mac. Por eso, desde Claude Code, SQLcl no encuentra los `.sql` que dejas en `/tmp` ni
+funciona `@fichero`. Para salvar eso, el contenedor del MCP monta una carpeta compartida del
+proyecto, **`intercambio/`**, en la ruta **`/intercambio`** (lectura y escritura).
+
+Así, para compilar un package desde otro chat:
+
+1. Claude deja el fuente en `intercambio/` (p. ej. `intercambio/mi_package.sql`), en **UTF-8**.
+2. Lo compila con `@/intercambio/mi_package.sql` (la ruta es la de dentro del contenedor).
+3. Como es lectura/escritura, SQLcl también puede **escribir** ahí (spool, exports, metadata)
+   y luego recoges el resultado desde el Mac.
+
+Detalles importantes:
+
+- El montaje se añade al registrar el MCP (opción 5). Si venías de una instalación anterior,
+  **vuelve a registrarlo** y **reinicia Claude Code** para que el contenedor arranque con la
+  carpeta montada.
+- La carpeta se crea sola al registrar (`mkdir -p`) y está **fuera de git** (`intercambio/`):
+  no subas ahí fuentes reales de clientes más de lo imprescindible.
+- Solo se monta esa subcarpeta, **nunca el proyecto entero**, para no exponer `secretos/` al
+  contenedor.
+- **Codificación:** los `.sql` que dejes para compilar son copias **efímeras** y van en UTF-8
+  para que SQLcl los lea bien con `@`. El fuente oficial conserva su codificación
+  (Windows-1252) en el Control de Fuentes de EDISA; la regla de "nuevo `.sql` = Windows-1252"
+  es para los fuentes, no para estas copias de compilación.
+- Lo que escriba el contenedor aparece en tu disco **a tu nombre** (Docker Desktop en macOS
+  mapea la propiedad al usuario del Mac), así que lo lees y lo borras con normalidad.
+- Pendiente de comprobar en real: que el MCP ejecuta `@` (un script completo) y no solo
+  sentencias sueltas. Si no fuera así, el montaje sigue valiendo para leer/escribir ficheros
+  de datos y salidas, y la vía de compilar sería enviar el fuente como texto.
+
 ## 2. Parametrización
 
 Las constantes del principio de `libra_mcp.sh` permiten ajustar el entorno sin tocar la
@@ -153,6 +186,8 @@ lógica:
 | `FICHERO_LOG_MCP` | `logs/mcp-peticiones.log` | Fichero donde se guardan las peticiones del MCP. |
 | `FICHERO_INTERRUPTOR_LOG` | `logs/mcp.on` | Interruptor: si el fichero existe, el modo log está activo. |
 | `RUTA_WRAPPER_MCP` | `lanzar_mcp.sh` | Wrapper que lanza el MCP y, si el modo log está activo, registra las peticiones. |
+| `DIRECTORIO_INTERCAMBIO` | `intercambio/` | Carpeta del Mac que se comparte con el contenedor del MCP (compilar, ficheros). |
+| `RUTA_INTERCAMBIO` | `/intercambio` | Ruta donde se monta esa carpeta dentro del contenedor del MCP. |
 
 El recomendador de pasos no tiene parámetros propios: reutiliza las comprobaciones que ya
 usa el resto del menú.

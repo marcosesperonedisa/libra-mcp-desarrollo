@@ -59,6 +59,7 @@ Si toca revisar el entorno, estos puntos no se han probado aún en real:
 - Antes de cualquier `INSERT`, `UPDATE`, `DELETE`, DDL o compilación de un package, muéstrame la sentencia completa y espera mi confirmación.
 - Todo `UPDATE` o `DELETE` lleva `WHERE` explícito; propón antes el `SELECT COUNT(*)` equivalente.
 - Al modificar un package, recuerda que el fuente oficial está en el Control de Fuentes de EDISA. Si compilas en la base de datos, avísame de que hay que subir el `.sql` para que no se desfase.
+- El contenedor del MCP está aislado y no ve el disco del Mac salvo la carpeta `intercambio/` del proyecto, montada en `/intercambio`. Para compilar un package, deja el `.sql` ahí (en UTF-8, es una copia efímera) y compílalo con `@/intercambio/fichero.sql`; el fuente oficial conserva su codificación en el Control de Fuentes. Si `@` no funciona a través del MCP, envía el fuente como texto. Nunca dejes datos reales de clientes en `intercambio/` más de lo imprescindible (está fuera de git).
 - Nunca inventes nombres de tablas, columnas, packages o programas de LIBRA. Compruébalos en el diccionario de datos (`ALL_TABLES`, `ALL_TAB_COLUMNS`, `ALL_SOURCE`…) o pregúntame.
 - Usa los packages estándar de LIBRA (pkentorno, pkerr, pk_email, PKALRT…) antes que reinventar funcionalidad.
 - Ejemplos y datos de prueba siempre ficticios; nunca copies datos reales de clientes fuera de la base de datos.
