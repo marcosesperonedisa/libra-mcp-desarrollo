@@ -16,6 +16,10 @@ readonly IMAGEN_SQLCL="libra-sqlcl-mcp"
 readonly VOLUMEN_CONEXIONES="sqlcl_conexiones"
 readonly RUTA_CONEXIONES="/root/.dbtools"
 readonly NOMBRE_MCP="sqlcl"
+readonly DIRECTORIO_LOGS="$DIRECTORIO_PROYECTO/logs"
+readonly FICHERO_LOG_MCP="$DIRECTORIO_LOGS/mcp-peticiones.log"
+readonly FICHERO_INTERRUPTOR_LOG="$DIRECTORIO_LOGS/mcp.on"
+readonly RUTA_WRAPPER_MCP="$DIRECTORIO_PROYECTO/lanzar_mcp.sh"
 readonly SEGUNDOS_ESPERA_TUNEL=30
 readonly SEGUNDOS_ESPERA_CERTIFICADO=20
 
@@ -98,6 +102,7 @@ vpn_configurada()      { [ -f "$FICHERO_VPN" ]; }
 certificado_guardado() { grep -qE '^[[:space:]]*trusted-cert[[:space:]]*=' "$FICHERO_VPN" 2>/dev/null; }
 tunel_activo()         { docker exec "$CONTENEDOR_VPN" ip link show ppp0 >/dev/null 2>&1; }
 mcp_registrado()       { claude_disponible && claude mcp get "$NOMBRE_MCP" >/dev/null 2>&1; }
+log_mcp_activo()       { [ -f "$FICHERO_INTERRUPTOR_LOG" ]; }
 
 vpn_en_marcha() {
   [ "$(docker inspect -f '{{.State.Running}}' "$CONTENEDOR_VPN" 2>/dev/null)" = "true" ]
@@ -177,6 +182,11 @@ ver_estado() {
     mostrar_error "Túnel VPN activo"
   fi
   mostrar_comprobacion "Servidor MCP registrado en Claude Code" mcp_registrado
+  if log_mcp_activo; then
+    mostrar_ok "Log del MCP activo (logs/mcp-peticiones.log)"
+  else
+    mostrar_aviso "Log del MCP inactivo"
+  fi
 }
 
 # ===================== VPN: credenciales =====================
@@ -363,6 +373,49 @@ ver_log_vpn() {
   trap - INT
 }
 
+# ===================== Log del MCP =====================
+
+# Activa o desactiva el log de peticiones del MCP creando/borrando el interruptor.
+# El wrapper 'lanzar_mcp.sh' lo mira al arrancar cada sesión del contenedor de SQLcl.
+alternar_log_mcp() {
+  mostrar_titulo "Log del MCP"
+  if log_mcp_activo; then
+    confirmar "El log del MCP está ACTIVO. ¿Desactivarlo?" || return
+    if rm -f "$FICHERO_INTERRUPTOR_LOG"; then
+      mostrar_ok "Log del MCP desactivado."
+    else
+      mostrar_error "No se pudo desactivar el log."
+      return
+    fi
+  else
+    mostrar_aviso "Con el log activo se registran las peticiones del MCP (incluida la SQL"
+    mostrar_aviso "que ejecuta) en $FICHERO_LOG_MCP. El fichero puede crecer."
+    confirmar "El log del MCP está INACTIVO. ¿Activarlo?" || return
+    if mkdir -p "$DIRECTORIO_LOGS" && : > "$FICHERO_INTERRUPTOR_LOG"; then
+      mostrar_ok "Log del MCP activado."
+    else
+      mostrar_error "No se pudo activar el log."
+      return
+    fi
+  fi
+  if ! mcp_registrado; then
+    mostrar_aviso "Recuerda registrar el MCP (opción 5) para que use el wrapper de log."
+  fi
+  mostrar_aviso "El cambio surte efecto en la próxima sesión: reinicia Claude Code."
+}
+
+# Muestra el log de peticiones del MCP (sigue el fichero hasta Ctrl+C)
+ver_log_mcp() {
+  mostrar_titulo "Log del MCP (Ctrl+C para volver al menú)"
+  if [ ! -f "$FICHERO_LOG_MCP" ]; then
+    mostrar_aviso "Todavía no hay log. Actívalo (opción 14), reinicia Claude Code y usa el MCP."
+    return
+  fi
+  trap ':' INT
+  tail -n 50 -f "$FICHERO_LOG_MCP"
+  trap - INT
+}
+
 # ===================== Imágenes =====================
 
 construir_imagenes() {
@@ -475,7 +528,9 @@ registrar_mcp() {
     confirmar "Ya existe un servidor MCP llamado '$NOMBRE_MCP'. ¿Reemplazarlo?" || return
     claude mcp remove "$NOMBRE_MCP" -s user
   fi
-  claude mcp add -s user "$NOMBRE_MCP" -- docker run -i --rm \
+  # Registramos el MCP a través del wrapper 'lanzar_mcp.sh', que puede registrar las
+  # peticiones en un log si el modo está activo (opción 14). El comando docker es el mismo.
+  claude mcp add -s user "$NOMBRE_MCP" -- "$RUTA_WRAPPER_MCP" docker run -i --rm \
     --network "container:$CONTENEDOR_VPN" \
     -v "$VOLUMEN_CONEXIONES:$RUTA_CONEXIONES" \
     "$IMAGEN_SQLCL" -mcp \
@@ -689,6 +744,10 @@ mostrar_menu_principal() {
   12) Actualizar SQLcl
   13) Desinstalar
 
+ Log del MCP
+  14) Activar/desactivar log del MCP
+  15) Ver log del MCP
+
    0) Salir
 
 MENU
@@ -744,6 +803,8 @@ menu_principal() {
       11) menu_conexiones ;;
       12) actualizar_sqlcl; pausar ;;
       13) desinstalar; pausar ;;
+      14) alternar_log_mcp; pausar ;;
+      15) ver_log_mcp; pausar ;;
       0)  exit 0 ;;
       *)  mostrar_error "Opción no válida."; sleep 1 ;;
     esac

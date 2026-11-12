@@ -334,3 +334,153 @@ volumen, desregistrar MCP y borrar secretos, con confirmación en cada paso dest
 - Que `claude mcp remove "$NOMBRE_MCP" -s user` funciona en la instalación del usuario.
 - Que `docker volume rm` no falla por "volume is in use": si el MCP sigue vivo en una
   sesión de Claude Code, habrá que cerrarla antes.
+
+## 2026-11-11 — Modo de log de actividad del MCP de SQLcl
+
+### 1. La petición tal como se ha entendido
+
+**Pendiente de confirmación del usuario.**
+
+Un "modo log" del MCP de SQLcl, con **fichero local** y **solo peticiones**:
+
+- Un **wrapper** (script del repo) se interpone al arrancar el contenedor de SQLcl: si
+  el modo está activo, copia con `tee` la **entrada** del MCP (las peticiones: la SQL
+  que ejecuta, las búsquedas de procedimientos y los parámetros) a un fichero local; la
+  **salida** (respuestas) pasa intacta y **no se guarda** (ni se toca el protocolo, ni
+  se vuelcan datos de la BD). Si el modo está desactivado, el wrapper arranca el
+  contenedor sin interponer nada.
+- El **registro del MCP** (opción 5) pasa a apuntar al wrapper (una vez). **Activar o
+  desactivar** el modo es un interruptor que se cambia desde el menú y surte efecto en
+  la **siguiente sesión** de Claude Code (hay que reiniciarlo).
+- En el menú: una opción para **activar/desactivar** el log del MCP (muestra el estado
+  actual) y otra para **ver el log** (tail), al estilo del log de la VPN.
+- El fichero vive en `logs/` (fuera de git).
+
+Nota: adoptar el wrapper obliga a **re-registrar el MCP una vez** (opción 5); quien ya
+lo tenga registrado con el comando antiguo debe volver a registrarlo.
+
+### 2. Preguntas y respuestas
+
+**Contexto técnico (hallazgos):**
+- El contenedor de SQLcl lo lanza Claude Code por sesión (`docker run -i --rm … -mcp`),
+  es efímero, sin nombre fijo y habla por stdio (JSON-RPC). `docker logs` no aplica
+  como con la VPN.
+- SQLcl MCP **ya registra** por defecto lo que ejecuta en una tabla de BD,
+  `DBTOOLS$MCP_LOG` (en el esquema del usuario conectado), con las sentencias marcadas
+  (`/* LLM in use */`) y `V$SESSION.MODULE/ACTION` poblados. No es un fichero local.
+- No hay opción documentada para que SQLcl escriba lo ejecutado a un fichero aparte.
+
+**P1 — ¿Qué fuente/enfoque prefieres para el log?**
+- (A) **Log nativo en BD** (`DBTOOLS$MCP_LOG`): una opción de menú que lo consulte por
+  una conexión y lo muestre. Es la fuente oficial del SQL ejecutado, pero es
+  server-side (usa/crea una tabla en la BD), va por esquema y puede no recoger las
+  búsquedas de procedimientos (solo el SQL).
+- (B) **Fichero local capturando el stdio del MCP**: registrar el MCP envuelto en un
+  wrapper que haga `tee` de entrada/salida a un fichero del host. Captura todo (tool
+  calls, consultas, búsquedas de procedimientos y respuestas), es local y "modo"
+  activable, pero el fichero es JSON-RPC crudo (verboso) y activar/desactivar implica
+  re-registrar el MCP y reiniciar Claude Code.
+
+_R1: (B) **Fichero local capturando el stdio del MCP** mediante un wrapper con `tee`._
+
+**P2 — ¿Qué se registra en el fichero?**
+- (A) Solo las **peticiones** al MCP (lo que se le pide: la SQL que ejecuta, las
+  búsquedas de procedimientos, los parámetros de cada tool call). Cubre lo pedido y
+  **no vuelca datos de la BD** al disco; fichero más ligero.
+- (B) Peticiones **+ respuestas completas** (incluye los resultados que devuelve la
+  BD). Más completo para depurar, pero el fichero crece mucho y puede contener **datos
+  reales de clientes** en local.
+
+_R2: (A) **Solo peticiones** (stdin). Se hace `tee` de la entrada; la salida no se
+guarda, para no volcar datos de clientes ni tocar el protocolo._
+
+### 3. Fuentes analizadas
+
+- Documentación oficial de SQLcl (25.x): "Monitoring the SQLcl MCP Server" y "Using the
+  Oracle SQLcl MCP Server". Hallazgo: el MCP registra por defecto en la tabla
+  `DBTOOLS$MCP_LOG` (esquema del usuario), marca las sentencias (`/* LLM in use */`) y
+  puebla `V$SESSION.MODULE/ACTION`. No hay opción documentada para volcar lo ejecutado a
+  un fichero local.
+- `libra_mcp.sh` (sobre el commit 7d1dfb6): `registrar_mcp`, `ver_log_vpn`, `ver_estado`,
+  helpers (`confirmar`, `mostrar_*`) y menú.
+- `sqlcl/Dockerfile`: imagen SQLcl con `ENTRYPOINT ["sql"]`.
+
+### 4. Decisiones
+
+- Enfoque **fichero local vía wrapper** (R1=B) y **solo peticiones** (R2=A): el wrapper
+  `lanzar_mcp.sh` hace `tee` de la **entrada** (stdin) del contenedor; la salida pasa
+  intacta. Por qué: ni se corrompe el protocolo MCP ni se vuelcan datos de la BD.
+- **Wrapper genérico:** recibe el comando docker como argumentos (`"$@"`), para no
+  duplicar ni desfasar el comando de arranque del MCP.
+- **Interruptor por fichero** `logs/mcp.on`: activar/desactivar no obliga a re-registrar
+  el MCP; `registrar_mcp` pasa a apuntar al wrapper una sola vez.
+- **Menú:** nuevo bloque "Log del MCP" con `14) Activar/desactivar` y `15) Ver log`, sin
+  renumerar el resto; línea de estado del log en `6) Ver estado`.
+- `logs/` se añade al `.gitignore`.
+
+### 5. Alternativas descartadas
+
+- **Log nativo en BD (`DBTOOLS$MCP_LOG`):** descartado como fuente principal por ser
+  server-side, ir por esquema y poder no recoger las búsquedas de procedimientos. Queda
+  como consulta posible si en algún momento interesa el histórico en la BD.
+- **Activar el modo re-registrando/desregistrando el wrapper:** descartado a favor del
+  interruptor por fichero, que no obliga a tocar el registro del MCP cada vez.
+- **Guardar también las respuestas:** descartado (R2) por tamaño y por contener datos
+  reales de clientes.
+- **Renumerar el menú** para meter las opciones en "Uso diario": descartado para no
+  romper las referencias ya existentes (opción 5, 7, 11…).
+
+### 6. Pendiente de comprobar
+
+- En uso real: que `tee` no rompe el handshake del MCP ni introduce latencia perceptible.
+- Que el contenido capturado (JSON-RPC línea a línea) resulta legible y útil; si no,
+  valorar darle formato.
+- Tamaño/rotación del fichero: de momento sin rotación; vigilar que no crezca sin control.
+- Que, tras re-registrar el MCP (opción 5) y reiniciar Claude Code, el wrapper se usa de
+  verdad y el log se rellena.
+
+## 2026-11-11 — Registrar en el log solo las llamadas a herramientas (tools/call)
+
+### 1. La petición tal como se ha entendido
+
+**Confirmada.** En el log del MCP interesa guardar solo las peticiones `tools/call` (lo
+que el asistente ejecuta: `connect`, `sql_run`, búsquedas de procedimientos y sus
+parámetros), no el handshake de arranque (`initialize`, `tools/list`, etc.).
+
+### 2. Preguntas y respuestas
+
+Petición clara; solo se confirmó el plan. Decisión de diseño incluida y aprobada:
+mantener una cabecera de sesión, pero **perezosa** (solo se escribe si la sesión llega a
+hacer alguna llamada), para no dejar ruido en sesiones que solo se presentan.
+
+### 3. Fuentes analizadas
+
+- Log real `logs/mcp-peticiones.log` de la prueba previa: capturaba `initialize`,
+  `notifications/initialized`, `server/discover`, `tools/list` (handshake) y, al
+  ejecutar, `tools/call`.
+- `lanzar_mcp.sh` (versión del modo log, aún sin commitear).
+
+### 4. Decisiones
+
+- El wrapper pasa de `#!/bin/sh` a `#!/bin/bash` para usar *process substitution* `>(...)`.
+- En vez de `tee -a fichero`, se usa `tee >(awk …)`: el `tee` manda el stream íntegro a
+  docker (intacto) y una copia al `awk`, que escribe en el log solo las líneas que
+  contienen `"method":"tools/call"`. Por qué: el stream hacia SQLcl debe quedar byte a
+  byte; se filtra solo la copia, no lo que ve el MCP.
+- Cabecera de sesión **perezosa** (solo si hay al menos un `tools/call`).
+
+### 5. Alternativas descartadas
+
+- **Filtrar con `grep`:** válido, pero el `awk` permite además la cabecera perezosa en un
+  solo paso.
+- **Reprocesar el stream hacia docker** (p. ej. `awk … {print}` en la tubería principal):
+  descartado; reconstruir el stream del protocolo es arriesgado. Mejor dejar el camino a
+  docker con `tee` (byte a byte) y filtrar solo la copia.
+- **Quitar del todo la cabecera de sesión:** se mantiene una, pero perezosa, por
+  legibilidad sin añadir ruido.
+
+### 6. Pendiente de comprobar
+
+- En real: que el `awk` de la copia no afecta al rendimiento del MCP con uso intenso.
+- Que las líneas `tools/call` reales caben en una sola línea (JSON compacto); si alguna
+  viniera multilínea, habría que revisar el filtrado por línea.

@@ -58,6 +58,8 @@ Después, arranca la VPN (opción 7) y añade tus conexiones Oracle (opción 11)
 
 **Mantenimiento:** actualizar SQLcl a la última versión y **desinstalar** el entorno (elimina el contenedor y las imágenes y, con confirmación propia en cada caso, el volumen de conexiones, el registro del MCP y los secretos de la VPN).
 
+**Log del MCP:** activar/desactivar (opción 14) y ver (opción 15) el registro de las **peticiones** que el MCP hace a la base de datos (la SQL que ejecuta, las búsquedas de procedimientos…). Se guarda en `logs/mcp-peticiones.log` (fuera de git) y solo registra las peticiones, no los resultados. El cambio surte efecto al reiniciar Claude Code.
+
 ## Instalación manual (referencia)
 
 Son los mismos pasos que hace el menú, por si prefieres ejecutarlos a mano.
@@ -116,11 +118,13 @@ SQL> exit
 ### 6. Registrar el servidor MCP en Claude Code
 
 ```
-claude mcp add -s user sqlcl -- docker run -i --rm --network container:vpn_libra -v sqlcl_conexiones:/root/.dbtools libra-sqlcl-mcp -mcp
+claude mcp add -s user sqlcl -- "$PWD/lanzar_mcp.sh" docker run -i --rm --network container:vpn_libra -v sqlcl_conexiones:/root/.dbtools libra-sqlcl-mcp -mcp
 claude mcp list
 ```
 
 Usa `-i` sin `-t`: el servidor MCP se comunica por la entrada y salida estándar, y una terminal (TTY) corrompería los mensajes.
+
+El MCP se registra a través del wrapper `lanzar_mcp.sh` (usa su ruta absoluta). Ese wrapper permite activar un **log de peticiones** del MCP desde el menú (opción 14); si no quieres esa función, puedes registrar el `docker run ...` directamente sin el wrapper.
 
 Para probarlo, abre Claude Code y pide: "lista las conexiones disponibles".
 

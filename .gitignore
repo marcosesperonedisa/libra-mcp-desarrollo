@@ -3,3 +3,6 @@ secretos/
 
 # Basura de macOS
 .DS_Store
+
+# Logs locales del MCP
+logs/

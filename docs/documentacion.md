@@ -64,6 +64,34 @@ pieza no existe, lo indica y continúa. Al final muestra un resumen de lo hecho.
 Si el volumen no se deja borrar por estar "en uso", cierra Claude Code (que mantiene viva
 la sesión del MCP) y repite la desinstalación.
 
+### Log del MCP
+
+El servidor MCP de SQLcl lo lanza Claude Code en cada sesión a través del wrapper
+`lanzar_mcp.sh`. Ese wrapper permite un **modo log** que registra **solo las llamadas a
+herramientas** del MCP (las peticiones `tools/call`: la SQL que ejecuta, las búsquedas de
+procedimientos y sus parámetros), no el handshake de arranque ni las respuestas, así que
+no se vuelcan datos de la base de datos.
+
+Desde el menú:
+
+- **14) Activar/desactivar log del MCP:** crea o borra el interruptor `logs/mcp.on`. Con
+  el modo activo, las peticiones se van guardando en `logs/mcp-peticiones.log`.
+- **15) Ver log del MCP:** muestra el fichero y lo sigue (como el log de la VPN); Ctrl+C
+  para volver al menú.
+
+Detalles importantes:
+
+- El cambio **surte efecto en la siguiente sesión** de Claude Code: tras activar o
+  desactivar, reinicia Claude Code.
+- Para que el log funcione, el MCP debe estar registrado **a través del wrapper**; si
+  venías de una instalación anterior, vuelve a registrarlo (opción 5).
+- La carpeta `logs/` está fuera de git. Solo se registran peticiones, pero esas
+  peticiones incluyen la SQL que se ejecuta: trátalo como información sensible.
+- Técnicamente, el wrapper hace `tee` de la entrada (stdin): el stream **íntegro** va al
+  contenedor y una **copia** se filtra con `awk` para quedarse solo con las líneas
+  `tools/call`. La salida (respuestas) pasa intacta, así no se altera el protocolo MCP.
+  Cada sesión escribe una cabecera con fecha solo si llega a hacer alguna llamada.
+
 ## 2. Parametrización
 
 Las constantes del principio de `libra_mcp.sh` permiten ajustar el entorno sin tocar la
@@ -78,6 +106,10 @@ lógica:
 | `NOMBRE_MCP` | `sqlcl` | Nombre con el que se registra el servidor MCP en Claude Code. |
 | `SEGUNDOS_ESPERA_TUNEL` | `30` | Tiempo máximo esperando a que suba el túnel al arrancar la VPN. |
 | `SEGUNDOS_ESPERA_CERTIFICADO` | `20` | Tiempo máximo esperando a leer la huella del certificado del FortiGate. |
+| `DIRECTORIO_LOGS` | `logs/` | Carpeta de logs locales del MCP (fuera de git). |
+| `FICHERO_LOG_MCP` | `logs/mcp-peticiones.log` | Fichero donde se guardan las peticiones del MCP. |
+| `FICHERO_INTERRUPTOR_LOG` | `logs/mcp.on` | Interruptor: si el fichero existe, el modo log está activo. |
+| `RUTA_WRAPPER_MCP` | `lanzar_mcp.sh` | Wrapper que lanza el MCP y, si el modo log está activo, registra las peticiones. |
 
 El recomendador de pasos no tiene parámetros propios: reutiliza las comprobaciones que ya
 usa el resto del menú.
